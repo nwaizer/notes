@@ -1,0 +1,171 @@
+# Example consumer
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: sidecar-consumer-sa
+  namespace: hw-event-proxy-operator-system
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: sidecar-consumer-role
+rules:
+- apiGroups:
+  - authentication.k8s.io
+  resources:
+  - tokenreviews
+  verbs:
+  - create
+- apiGroups:
+  - authorization.k8s.io
+  resources:
+  - subjectaccessreviews
+  verbs:
+  - create
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: sidecar-consumer-role-binding
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: sidecar-consumer-role
+subjects:
+- kind: ServiceAccount
+  name: sidecar-consumer-sa
+  namespace: hw-event-proxy-operator-system
+---
+apiVersion: v1
+kind: Service
+metadata:
+  annotations:
+    prometheus.io/scrape: "true"
+    service.alpha.openshift.io/serving-cert-secret-name: sidecar-consumer-secret
+  labels:
+    app: consumer-service
+  name: consumer-sidecar-service
+  namespace: hw-event-proxy-operator-system
+spec:
+  ports:
+  - name: metrics
+    port: 8443
+    targetPort: https
+  selector:
+    app: consumer
+  type: ClusterIP
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: consumer
+  name: consumer
+  namespace: hw-event-proxy-operator-system
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: consumer
+  template:
+    metadata:
+      labels:
+        app: consumer
+    spec:
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: app
+                operator: In
+                values:
+                - local
+      containers:
+      - args:
+        - --local-api-addr=127.0.0.1:9089
+        - --api-path=/api/cloudNotifications/v1/
+        - --api-addr=127.0.0.1:8089
+        env:
+        - name: NODE_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: spec.nodeName
+        - name: CONSUMER_TYPE
+          value: HW
+        - name: LOG_LEVEL
+          value: debug
+        image: quay.io/redhat-cne/cloud-native-event-consumer
+        name: cloud-native-event-consumer
+      - args:
+        - --metrics-addr=127.0.0.1:9091
+        - --store-path=/store
+        - --transport-host=amqp://router.$(AMQP_NAMESPACE).svc.cluster.local
+        - --api-port=8089
+        env:
+        - name: AMQP_NAMESPACE
+          value: router
+        - name: NODE_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: spec.nodeName
+        - name: LOG_LEVEL
+          value: debug
+        image: quay.io/redhat-cne/cloud-event-proxy
+        name: cloud-native-event-sidecar
+        ports:
+        - containerPort: 9091
+          name: metrics-port
+        volumeMounts:
+        - mountPath: /store
+          name: pubsubstore
+      - args:
+        - --logtostderr
+        - --secure-listen-address=:8443
+        - --tls-cipher-suites=TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,TLS_RSA_WITH_AES_128_CBC_SHA256,TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA256,TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA256
+        - --upstream=http://127.0.0.1:9091/
+        - --tls-private-key-file=/etc/metrics/tls.key
+        - --tls-cert-file=/etc/metrics/tls.crt
+        image: quay.io/coreos/kube-rbac-proxy:v0.5.0
+        name: kube-rbac-proxy
+        ports:
+        - containerPort: 8443
+          name: https
+        resources:
+          requests:
+            cpu: 10m
+            memory: 20Mi
+        volumeMounts:
+        - mountPath: /etc/metrics
+          name: sidecar-certs
+      serviceAccountName: sidecar-consumer-sa
+      volumes:
+      - emptyDir: {}
+        name: pubsubstore
+      - name: sidecar-certs
+        secret:
+          secretName: sidecar-consumer-secret
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  labels:
+    k8s-app: consumer-sidecar-service-monitor
+  name: consumer-sidecar-service-monitor
+  namespace: hw-event-proxy-operator-system
+spec:
+  endpoints:
+  - bearerTokenFile: /var/run/secrets/kubernetes.io/serviceaccount/token
+    interval: 30s
+    port: metrics
+    scheme: https
+    tlsConfig:
+      caFile: /etc/prometheus/configmaps/serving-certs-ca-bundle/service-ca.crt
+      serverName: consumer-sidecar-service.hw-event-proxy-operator-system.svc
+  jobLabel: hw-event-proxy-operator-system
+  namespaceSelector:
+    matchNames:
+    - hw-event-proxy-operator-system
+  selector:
+    matchLabels:
+      app: consumer-service
