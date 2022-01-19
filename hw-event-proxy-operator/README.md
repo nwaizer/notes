@@ -19,7 +19,7 @@ oc apply -f config/samples/event_v1alpha1_hardwareevent.yaml -n hw-event-proxy-o
 
 oc apply -f tests/e2e/manifest/secret.yaml -n hw-event-proxy-operator-system
 
-# https://github.com/jzding/notes/blob/main/consumer.yaml
+# get example consumer.yaml from this repo
 oc apply -f consumer.yaml -n hw-event-proxy-operator-system
 
 oc -n hw-event-proxy-operator-system get pods
