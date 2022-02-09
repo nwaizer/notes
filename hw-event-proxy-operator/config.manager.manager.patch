@@ -1,0 +1,11 @@
+--- config/manager/manager.yaml.orig	2022-02-09 16:17:52.188147297 +0200
++++ config/manager/manager.yaml	2022-02-09 16:18:49.489348130 +0200
+@@ -1,6 +1,8 @@
+ apiVersion: v1
+ kind: Namespace
+ metadata:
++  annotations:
++    workload.openshift.io/allowed: management
+   labels:
+     control-plane: controller-manager
+   name: system
