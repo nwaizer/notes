@@ -24,8 +24,11 @@ make deploy-amq
 # Also can run this sed -i 's#amqp://amq-router-service-name.amq-namespace.svc.cluster.local#amqp://router.router.svc.cluster.local#' config/samples/event_v1alpha1_hardwareevent.yaml
 oc apply -f config/samples/event_v1alpha1_hardwareevent.yaml -n hw-event-proxy-operator-system
 
-#Fix the redfish address to the system under test, for example my helix28 is:
+#Fix the redfish address to the system under test, for example my helix28 is 10.46.61.213
 sed -i 's/10.19.28.42/10.46.61.213/' tests/e2e/manifest/secret.yaml
+#Fix redfish username and password
+#echo -n "root"|base64
+#-> cm9vdA==
 
 oc apply -f tests/e2e/manifest/secret.yaml -n hw-event-proxy-operator-system
 
